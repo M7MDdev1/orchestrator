@@ -1,0 +1,150 @@
+{
+  "info": {
+    "name": "Ebra Orchestrator API",
+    "_postman_id": "ebfae2d2-0000-4000-8000-000000000000",
+  "description": "Collection for testing the Ebra Orchestrator API.\n\nNote: the codebase includes a SimulatedProvider for local testing. When `USE_SIMULATOR=true` the provider will return a simulated providerCallId from the provider.startCall() call. The API response for creating a call contains the internal call id; the providerCallId is returned only by the provider. To simulate the provider webhook, POST to /callbacks/call-status with the `providerCallId` (field name: `providerCallId`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Create Call",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"to\": \"+15555555555\",\n  \"scriptId\": \"greeting_v1\",\n  \"metadata\": { \"customerId\": \"1234\" }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/calls",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "calls"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Call",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+            "raw": "{{baseUrl}}/calls/:id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "calls", ":id"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Update Call (if PENDING)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"metadata\": { \"attemptNote\": \"retry attempt\" }\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/calls/:id",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "calls", ":id"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "List Calls by Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/calls?status=PENDING&page=1&pageSize=20",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "calls" 
+          ],
+          "query": [
+            { "key": "status", "value": "PENDING" },
+            { "key": "page", "value": "1" },
+            { "key": "pageSize", "value": "20" }
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Metrics",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/metrics",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "metrics"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Provider Callback (settle)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"providerCallId\": \"provider-call-123\",\n  \"status\": \"COMPLETED\",\n  \"completedAt\": \"2025-01-01T12:00:00.000Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/callbacks/call-status",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "callbacks", "call-status"
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

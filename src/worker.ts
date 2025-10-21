@@ -1,0 +1,23 @@
+import { AppDataSource } from './data-source';
+import { claimOne, startProviderCall, handleRetryOrFail } from './services/worker.service';
+
+async function sleep(ms: number) { return new Promise(r => setTimeout(r, ms)); }
+
+async function main() {
+  await AppDataSource.initialize();
+  while (true) {
+    try {
+      const call = await claimOne();
+      if (!call) { await sleep(250); continue; }
+      try {
+        await startProviderCall(call);
+        // completion via webhook later
+      } catch (err: any) {
+        await handleRetryOrFail(call.id, err?.message || 'provider error');
+      }
+    } catch (e) {
+      await sleep(1000);
+    }
+  }
+}
+main().catch(e => { console.error(e); process.exit(1); });
