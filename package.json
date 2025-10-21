@@ -4,7 +4,15 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev:api": "ts-node-dev --respawn src/server.ts",
+    "dev:worker": "ts-node-dev --respawn src/worker.ts",
+    "typeorm": "ts-node ./node_modules/typeorm/cli",
+    "build": "tsc",
+    "start:api": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
+
+        "migrate:generate": "npm run build && npx ts-node ./node_modules/typeorm/cli migration:generate -n Init"
   },
   "keywords": [],
   "author": "",
