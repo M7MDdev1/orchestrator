@@ -24,17 +24,21 @@ export async function reclaimStaleInProgress(): Promise<void> {
   const maxAttempts = Number(process.env.MAX_ATTEMPTS || 3);
   // Update rows stale longer than STALE_INPROG_SECONDS using QueryBuilder
   // Increment attempts and set status/next_run_at/ended_at/last_error according to maxAttempts
+  console.debug('[worker] reclaimStaleInProgress: checking for stale IN_PROGRESS rows');
   await AppDataSource.createQueryBuilder()
     .update(Call)
     .set({
       attempts: () => 'attempts + 1',
-      status: () => `CASE WHEN attempts + 1 >= ${maxAttempts} THEN 'FAILED' ELSE 'PENDING' END`,
+      // cast the CASE result to the call_status enum to avoid text->enum type errors
+      status: () => `CASE WHEN attempts + 1 >= ${maxAttempts} THEN 'FAILED'::call_status ELSE 'PENDING'::call_status END`,
       nextRunAt: () => `CASE WHEN attempts + 1 >= ${maxAttempts} THEN next_run_at ELSE NOW() END`,
       endedAt: () => `CASE WHEN attempts + 1 >= ${maxAttempts} THEN NOW() ELSE NULL END`,
       lastError: () => `CASE WHEN attempts + 1 >= ${maxAttempts} THEN coalesce(last_error, 'stale-in-progress') ELSE last_error END`
     })
-    .where(`status = 'IN_PROGRESS' AND started_at < NOW() - INTERVAL '${STALE_INPROG_SECONDS} seconds'`)
+    // cast literal in WHERE as well
+    .where(`status = 'IN_PROGRESS'::call_status AND started_at < NOW() - INTERVAL '${STALE_INPROG_SECONDS} seconds'`)
     .execute();
+  console.debug('[worker] reclaimStaleInProgress: done');
 }
 
 export async function claimOne(): Promise<CallDTO | null> {
@@ -49,12 +53,16 @@ export async function claimOne(): Promise<CallDTO | null> {
       // Acquire an advisory lock to serialize concurrency checks across workers.
       // This makes the GLOBAL_CAP check atomic and prevents races where multiple
       // workers read the same count and both proceed to claim, exceeding the cap.
-      const lockKey = Number(process.env.GLOBAL_CONCURRENCY_LOCK_KEY || 424242);
+  const lockKey = Number(process.env.GLOBAL_CONCURRENCY_LOCK_KEY || 424242);
       // pg_advisory_xact_lock takes a bigint; we pass the lock key to serialize this transaction
-      await qr.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+  console.debug('[worker] claimOne: acquiring advisory lock', { lockKey });
+  await qr.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+  console.debug('[worker] claimOne: advisory lock acquired');
 
-      const inprog = await qr.manager.count(Call, { where: { status: 'IN_PROGRESS' as CallStatus } });
+  const inprog = await qr.manager.count(Call, { where: { status: 'IN_PROGRESS' as CallStatus } });
+  console.debug('[worker] claimOne: in-progress count', { inprog });
       if (inprog >= GLOBAL_CAP) {
+        console.debug('[worker] claimOne: global cap reached', { inprog, GLOBAL_CAP });
         await qr.rollbackTransaction();
         return null;
       }
@@ -67,17 +75,23 @@ export async function claimOne(): Promise<CallDTO | null> {
            )
          ORDER BY c.created_at LIMIT 1 FOR UPDATE SKIP LOCKED`
       );
+      console.debug('[worker] claimOne: candidate rows found', { count: candidate ? candidate.length : 0 });
       if (!candidate || !candidate[0]) {
+        // nothing to claim
+        console.debug('[worker] claimOne: no pending calls found');
         await qr.rollbackTransaction();
         return null;
       }
+      console.debug('[worker] claimOne: candidate sample', candidate[0]);
 
       const id = candidate[0].id as string;
-      // flip to IN_PROGRESS and set startedAt
-      await qr.manager.update(Call, { id }, { status: 'IN_PROGRESS', startedAt: new Date() });
+  // flip to IN_PROGRESS and set startedAt
+  // cast status to call_status to avoid text->enum assignment errors
+  await qr.manager.query(`UPDATE calls SET status = 'IN_PROGRESS'::call_status, started_at = $1 WHERE id = $2`, [new Date(), id]);
 
       const updated = await qr.manager.findOne(Call, { where: { id } });
       await qr.commitTransaction();
+      console.info('[worker] claimOne: claimed call', { id });
       if (updated) return mapDbRowToCallDTO(updated as any);
       return null;
     } catch (err) {
@@ -96,7 +110,6 @@ export async function startProviderCall(call: CallDTO): Promise<void> {
 
   let provider: ProviderInterface = useSim ? new SimulatedProvider() : new HttpProvider(process.env.PROVIDER_BASE_URL!);
 
-
   const webhookUrl = `${process.env.PUBLIC_BASE_URL}/callbacks/call-status`;
   const payload = {
     to: call.to,
@@ -104,6 +117,7 @@ export async function startProviderCall(call: CallDTO): Promise<void> {
     webhookUrl
   };
 
+  console.info('[worker] startProviderCall: calling provider', { callId: call.id, to: call.to, useSim });
   const resp = await provider.startCall(payload);
   if (resp.callId) {
     // Use QueryBuilder insert with orIgnore to emulate ON CONFLICT DO NOTHING
@@ -113,6 +127,7 @@ export async function startProviderCall(call: CallDTO): Promise<void> {
       .values({ providerCallId: resp.callId as any, callId: call.id })
       .orIgnore()
       .execute();
+    console.info('[worker] startProviderCall: provider returned callId', { callId: resp.callId, internalId: call.id });
   }
 }
 
@@ -124,6 +139,7 @@ export async function handleRetryOrFail(callId: string, message: string): Promis
   const maxAttempts = Number(process.env.MAX_ATTEMPTS || 3);
   if (attempts < maxAttempts) {
     const delaySec = BASE_RETRY_SECONDS * Math.pow(2, attempts - 1);
+    console.warn('[worker] handleRetryOrFail: scheduling retry', { callId, attempts, delaySec, maxAttempts });
     await repo.update(callId, {
       attempts,
       status: 'PENDING',
@@ -131,6 +147,7 @@ export async function handleRetryOrFail(callId: string, message: string): Promis
       lastError: message
     });
   } else {
+    console.error('[worker] handleRetryOrFail: marking FAILED', { callId, attempts, maxAttempts, message });
     await repo.update(callId, {
       attempts,
       status: 'FAILED',
@@ -145,6 +162,7 @@ export async function settleFromProvider({ callId, status, completedAt }: { call
   const pcRepo = AppDataSource.getRepository(ProviderCall);
   const pc = await pcRepo.findOne({ where: { providerCallId: callId as any } });
   if (!pc) return; // unknown provider call
+  console.info('[worker] settleFromProvider: resolving provider call', { providerCallId: callId, status, completedAt });
   const internalId = pc.callId;
   const final = status === 'COMPLETED' ? 'COMPLETED' : 'FAILED';
   // avoid overwriting an already COMPLETED call with FAILED
