@@ -46,6 +46,13 @@ export async function claimOne(): Promise<CallDTO | null> {
 
     await qr.startTransaction();
     try {
+      // Acquire an advisory lock to serialize concurrency checks across workers.
+      // This makes the GLOBAL_CAP check atomic and prevents races where multiple
+      // workers read the same count and both proceed to claim, exceeding the cap.
+      const lockKey = Number(process.env.GLOBAL_CONCURRENCY_LOCK_KEY || 424242);
+      // pg_advisory_xact_lock takes a bigint; we pass the lock key to serialize this transaction
+      await qr.query('SELECT pg_advisory_xact_lock($1)', [lockKey]);
+
       const inprog = await qr.manager.count(Call, { where: { status: 'IN_PROGRESS' as CallStatus } });
       if (inprog >= GLOBAL_CAP) {
         await qr.rollbackTransaction();
