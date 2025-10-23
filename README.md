@@ -70,6 +70,75 @@ instantiate it in the worker instead of using the env switch.
 
 See `postman_collection.json` for ready-to-run examples you can import into Postman.
 
+## Full usage & testing guide
+
+Prerequisites
+- Node.js (18+ recommended)
+- A Postgres database (local or remote) for running the app and worker
+
+1) Configure environment
+- Copy `.env.example` -> `.env` and set DB connection and URLs.
+
+2) Build and run migrations
+- Build TypeScript:
+
+```bash
+npm run build
+```
+
+- Generate or apply migrations (project includes a migration file). To run migrations with TypeORM CLI:
+
+```bash
+npm run typeorm migration:run -d dist/data-source.js
+```
+
+3) Run the API and worker
+- Development (hot-reload):
+
+```bash
+npm run dev:api
+npm run dev:worker
+```
+
+- Production (after build):
+
+```bash
+npm run start:api
+npm run start:worker
+```
+
+4) Testing (unit tests)
+- Install dev dependencies (only needed once):
+
+```bash
+npm install --save-dev jest ts-jest @types/jest supertest @types/supertest
+```
+
+- Run tests:
+
+```bash
+npm test
+```
+
+The repository includes basic Jest tests that cover the HTTP routes. Tests mock repository and service layers so they run fast without a DB. Coverage report is produced in `coverage/`.
+
+5) End-to-end checks
+- To exercise the full end-to-end flow (DB + worker + provider):
+  - Ensure Postgres is running and migrations applied.
+  - Start API and worker (either dev or prod mode).
+  - Create a call via POST /calls (see `postman_collection.json`).
+  - If using the simulated provider (`USE_SIMULATOR=true`) the provider returns a providerCallId; use `scripts/inspect_call.js <CALL_ID>` or check `provider_calls` table to find the provider_call mapping. Then POST to `/callbacks/call-status` with `{ providerCallId, status: 'COMPLETED' }` to settle.
+
+Troubleshooting
+- If worker never claims calls: check `GLOBAL_CONCURRENCY` and `STALE_INPROG_SECONDS`, and ensure the worker process can connect to the DB.
+- If `provider_calls` mapping is missing: make sure `startProviderCall()` runs successfully (check worker logs). You can use `scripts/insert_provider_mapping.js` to manually add a mapping for testing.
+
+Where to look next
+- `src/services/worker.service.ts` — core claim/worker logic
+- `src/repositories/call.repo.ts` — DB CRUD helpers
+- `src/providers` — provider implementations (simulated + HTTP)
+
+
 ## Notes
 This project intentionally uses a persistence-first approach (Postgres as queue + locking).
 See `PROJECT_SUMMARY.md` for in-depth architecture notes and remaining work.

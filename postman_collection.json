@@ -10,10 +10,18 @@
       "key": "baseUrl",
       "value": "http://localhost:3000"
     }
+    ,{
+      "key": "publicBaseUrl",
+      "value": "http://localhost:3000"
+    },{
+      "key": "useSimulator",
+      "value": "true"
+    }
   ],
   "item": [
     {
       "name": "Create Call",
+      "description": "Create a new outbound call. The response contains the internal call id. When using the simulator the provider will return a providerCallId (see provider callback example).",
       "request": {
         "method": "POST",
         "header": [
@@ -40,6 +48,7 @@
     },
     {
       "name": "Get Call",
+      "description": "Fetch a call by internal id",
       "request": {
         "method": "GET",
         "header": [],
@@ -57,6 +66,7 @@
     },
     {
       "name": "Update Call (if PENDING)",
+      "description": "Update a call only when its status is PENDING",
       "request": {
         "method": "PATCH",
         "header": [
@@ -83,6 +93,7 @@
     },
     {
       "name": "List Calls by Status",
+      "description": "List calls filtered by status (PENDING | IN_PROGRESS | COMPLETED | FAILED | EXPIRED)",
       "request": {
         "method": "GET",
         "header": [],
@@ -105,6 +116,7 @@
     },
     {
       "name": "Metrics",
+      "description": "Simple counts by status",
       "request": {
         "method": "GET",
         "header": [],
@@ -122,6 +134,7 @@
     },
     {
       "name": "Provider Callback (settle)",
+      "description": "Typical provider webhook payload. Use providerCallId returned by provider (simulator) or the internal call id for compatibility.",
       "request": {
         "method": "POST",
         "header": [
@@ -145,6 +158,24 @@
         }
       },
       "response": []
+    }
+    ,{
+      "name": "Simulate provider callback (example)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"providerCallId\": \"<provider-call-id-from-simulator>\",\n  \"status\": \"COMPLETED\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/callbacks/call-status",
+          "host": ["{{baseUrl}}"],
+          "path": ["callbacks","call-status"]
+        }
+      }
     }
   ]
 }
