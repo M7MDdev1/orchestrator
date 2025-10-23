@@ -157,18 +157,26 @@ export async function handleRetryOrFail(callId: string, message: string): Promis
   }
 }
 
-export async function settleFromProvider({ callId, status, completedAt }: { callId: string; status: string; completedAt?: string }): Promise<void> {
+export async function settleFromProvider({ callId, status, completedAt }: { callId: string; status: string; completedAt?: string }): Promise<{ found: boolean; updated: boolean; internalId?: string; final?: string }> {
   // callId here is the provider's id (provider_call_id). Resolve the internal call_id.
   const pcRepo = AppDataSource.getRepository(ProviderCall);
   const pc = await pcRepo.findOne({ where: { providerCallId: callId as any } });
-  if (!pc) return; // unknown provider call
+  if (!pc) {
+    // unknown provider call
+    console.info('[worker] settleFromProvider: unknown provider call', { providerCallId: callId });
+    return { found: false, updated: false };
+  }
   console.info('[worker] settleFromProvider: resolving provider call', { providerCallId: callId, status, completedAt });
   const internalId = pc.callId;
   const final = status === 'COMPLETED' ? 'COMPLETED' : 'FAILED';
   // avoid overwriting an already COMPLETED call with FAILED
-  await AppDataSource.createQueryBuilder()
+  const result = await AppDataSource.createQueryBuilder()
     .update(Call)
     .set({ status: final, endedAt: completedAt ? new Date(completedAt) : new Date() })
     .where('id = :id AND status != :completed', { id: internalId, completed: 'COMPLETED' })
     .execute();
+
+  // execute() returns a raw result; we can infer update by checking affected (driver dependent)
+  const updated = (result && (result as any).affected ? (result as any).affected > 0 : true);
+  return { found: true, updated, internalId, final };
 }

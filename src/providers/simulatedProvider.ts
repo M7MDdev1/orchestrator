@@ -4,12 +4,12 @@ import { ProviderInterface, ProviderCallResponse } from './provider.interface';
 // and optionally triggers the webhook by calling the webhookUrl (not implemented here).
 // To use the simulator, set USE_SIMULATOR=true in your .env or swap the import in your DI layer.
 
-export class SimulatedProvider implements ProviderInterface {
-  private counter = 0;
+import crypto from 'crypto';
 
+export class SimulatedProvider implements ProviderInterface {
   async startCall(payload: { to: string; scriptId: string; webhookUrl: string }): Promise<ProviderCallResponse> {
-    this.counter += 1;
-    const callId = `sim-${Date.now()}-${this.counter}`;
+    // Return a UUID so it matches the DB provider_call_id uuid column.
+    const callId = crypto.randomUUID();
     // Optionally: you could POST to the webhookUrl here to simulate asynchronous callback.
     // For now we just return a provider-style response. Tests or scripts can then call the
     // /callbacks/call-status endpoint to simulate provider callback.

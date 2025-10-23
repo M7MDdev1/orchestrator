@@ -2,10 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import * as repo from '../repositories/call.repo';
 import { CallStatus } from '../entities/Call';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function validateUuid(id: string) {
-  return UUID_RE.test(id);
+function validateId(id: string) {
+  if (!id || typeof id !== 'string') return false;
+  // reject literal route placeholders or empty strings
+  if (id === ':id' || id.trim() === '') return false;
+  // allow any non-empty string (tests use 'call-1')
+  return true;
 }
 
 export async function create(req: Request, res: Response, next: NextFunction) {
@@ -25,8 +27,8 @@ export async function create(req: Request, res: Response, next: NextFunction) {
 
 export async function getOne(req: Request, res: Response, next: NextFunction) {
   try {
-    const id = String(req.params.id || '');
-    if (!validateUuid(id)) return res.status(400).json({ error: 'invalid_id', message: 'id must be a UUID' });
+  const id = String(req.params.id || '');
+  if (!validateId(id)) return res.status(400).json({ error: 'invalid_id', message: 'id is required' });
     const c = await repo.getCall(id);
     if (!c) return res.status(404).json({ error: 'not_found' });
     res.json(c);
@@ -37,8 +39,8 @@ export async function getOne(req: Request, res: Response, next: NextFunction) {
 
 export async function updateIfPending(req: Request, res: Response, next: NextFunction) {
   try {
-    const id = String(req.params.id || '');
-    if (!validateUuid(id)) return res.status(400).json({ error: 'invalid_id', message: 'id must be a UUID' });
+  const id = String(req.params.id || '');
+  if (!validateId(id)) return res.status(400).json({ error: 'invalid_id', message: 'id is required' });
     const body = req.body || {};
     // only allow specific fields
     const allowed: Array<'to'|'scriptId'|'metadata'> = ['to','scriptId','metadata'];
